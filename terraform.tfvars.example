@@ -1,0 +1,10 @@
+aws_region   = "ap-northeast-2"
+project_name = "myproject"
+environment  = "dev"
+
+repository_name      = "api"
+image_tag_mutability = "IMMUTABLE"
+scan_on_push         = true
+
+enable_lifecycle_policy = true
+max_image_count         = 30

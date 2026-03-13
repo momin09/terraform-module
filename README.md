@@ -1,213 +1,83 @@
-# Terraform 활용 가이드
+# ECR Service
 
-Terraform은 HashiCorp에서 만든 **Infrastructure as Code(IaC)** 도구로, 클라우드 인프라를 코드로 선언하고 자동으로 프로비저닝할 수 있습니다.
-
----
-
-## 목차
-
-1. [설치](#설치)
-2. [기본 개념](#기본-개념)
-3. [기본 사용법](#기본-사용법)
-4. [주요 명령어](#주요-명령어)
-5. [예제: AWS EC2 인스턴스 생성](#예제-aws-ec2-인스턴스-생성)
-6. [모범 사례](#모범-사례)
+AWS ECR(Elastic Container Registry) 컨테이너 이미지 레지스트리를 Terraform으로 관리하는 서비스 브랜치입니다.
 
 ---
 
-## 설치
+## 파일 구조
 
-### macOS (Homebrew)
-```bash
-brew tap hashicorp/tap
-brew install hashicorp/tap/terraform
 ```
-
-### Linux
-```bash
-sudo apt-get update && sudo apt-get install -y gnupg software-properties-common
-wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-sudo apt update && sudo apt install terraform
-```
-
-### 설치 확인
-```bash
-terraform version
+service/ecr
+├── main.tf                    # ECR 리포지토리 및 관련 리소스 정의
+├── variables.tf               # 입력 변수 선언
+├── outputs.tf                 # 출력값 정의
+├── versions.tf                # Provider 및 Terraform 버전 고정
+├── terraform.tfvars.example   # 변수 예시 파일
+├── .gitignore                 # 민감 파일 제외
+└── README.md                  # 이 문서
 ```
 
 ---
 
-## 기본 개념
+## 생성되는 리소스
 
-| 개념 | 설명 |
-|------|------|
-| **Provider** | AWS, GCP, Azure 등 클라우드/서비스 연결 플러그인 |
-| **Resource** | 생성할 인프라 구성 요소 (EC2, S3, VPC 등) |
-| **State** | 현재 인프라 상태를 저장하는 파일 (`terraform.tfstate`) |
-| **Module** | 재사용 가능한 Terraform 코드 묶음 |
-| **Variable** | 설정값을 외부에서 주입할 수 있는 변수 |
-| **Output** | 프로비저닝 후 출력할 값 |
+| 리소스 | 설명 |
+|--------|------|
+| `aws_ecr_repository` | ECR 이미지 리포지토리 |
+| `aws_ecr_lifecycle_policy` | 오래된 이미지 자동 삭제 정책 |
+| `aws_ecr_repository_policy` | 리포지토리 접근 제어 정책 |
 
 ---
 
-## 기본 사용법
-
-### 1. 프로젝트 구조
-```
-my-terraform/
-├── main.tf          # 주요 리소스 정의
-├── variables.tf     # 변수 선언
-├── outputs.tf       # 출력값 정의
-├── terraform.tfvars # 변수 실제 값 (git에 올리지 않음)
-└── versions.tf      # provider 버전 고정
-```
-
-### 2. Provider 설정 (`versions.tf`)
-```hcl
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-  required_version = ">= 1.5.0"
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-```
-
-### 3. 변수 선언 (`variables.tf`)
-```hcl
-variable "aws_region" {
-  description = "AWS 리전"
-  type        = string
-  default     = "ap-northeast-2"
-}
-
-variable "instance_type" {
-  description = "EC2 인스턴스 타입"
-  type        = string
-  default     = "t3.micro"
-}
-```
-
----
-
-## 주요 명령어
+## 사용 방법
 
 ```bash
-# 1. 초기화 (provider 다운로드)
+cp terraform.tfvars.example terraform.tfvars
 terraform init
-
-# 2. 문법 검사 및 포맷팅
-terraform validate
-terraform fmt
-
-# 3. 변경 사항 미리보기
 terraform plan
-
-# 4. 인프라 적용
 terraform apply
+```
 
-# 5. 인프라 삭제
-terraform destroy
+### Docker 이미지 푸시
 
-# 6. 현재 상태 확인
-terraform show
+```bash
+aws ecr get-login-password --region ap-northeast-2 | \
+  docker login --username AWS --password-stdin <repository_url>
 
-# 7. 리소스 목록 확인
-terraform state list
-
-# 8. 특정 리소스만 적용
-terraform apply -target=aws_instance.example
+docker tag myapp:latest <repository_url>:latest
+docker push <repository_url>:latest
 ```
 
 ---
 
-## 예제: AWS EC2 인스턴스 생성
+## 변수 설명
 
-### `main.tf`
-```hcl
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
+| 변수 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `aws_region` | string | `ap-northeast-2` | AWS 리전 |
+| `project_name` | string | - | 프로젝트 이름 (필수) |
+| `environment` | string | `dev` | 환경 (dev/staging/prod) |
+| `repository_name` | string | - | 리포지토리 이름 suffix (필수) |
+| `image_tag_mutability` | string | `IMMUTABLE` | 이미지 태그 변경 가능 여부 |
+| `scan_on_push` | bool | `true` | 푸시 시 자동 보안 스캔 |
+| `enable_lifecycle_policy` | bool | `true` | 라이프사이클 정책 활성화 |
+| `max_image_count` | number | `30` | 보관할 최대 이미지 수 |
 
-  tags = {
-    Name = "main-vpc"
-  }
-}
-
-resource "aws_subnet" "public" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "ap-northeast-2a"
-
-  tags = {
-    Name = "public-subnet"
-  }
-}
-
-resource "aws_instance" "web" {
-  ami           = "ami-0c9c942bd7bf113a2"  # Amazon Linux 2023
-  instance_type = var.instance_type
-  subnet_id     = aws_subnet.public.id
-
-  tags = {
-    Name        = "web-server"
-    Environment = "production"
-  }
-}
-```
-
-### `outputs.tf`
-```hcl
-output "instance_id" {
-  description = "EC2 인스턴스 ID"
-  value       = aws_instance.web.id
-}
-
-output "instance_public_ip" {
-  description = "EC2 퍼블릭 IP"
-  value       = aws_instance.web.public_ip
-}
-```
+> **리포지토리 이름**: `{project_name}-{environment}-{repository_name}` (예: `myproject-prod-api`)
 
 ---
 
-## 모범 사례
+## 피처 브랜치
 
-1. **State를 원격에 저장** - S3 + DynamoDB로 팀 협업 시 state 충돌 방지
-   ```hcl
-   terraform {
-     backend "s3" {
-       bucket         = "my-terraform-state"
-       key            = "prod/terraform.tfstate"
-       region         = "ap-northeast-2"
-       dynamodb_table = "terraform-lock"
-     }
-   }
-   ```
-
-2. **변수값 파일은 `.gitignore`에 추가**
-   ```
-   *.tfvars
-   .terraform/
-   terraform.tfstate*
-   ```
-
-3. **`terraform plan`을 항상 먼저 실행** - 예상치 못한 변경 방지
-
-4. **모듈 활용** - 반복되는 코드를 모듈로 추상화하여 재사용
-
-5. **태그 전략 수립** - 모든 리소스에 일관된 태그(환경, 팀, 비용센터 등) 적용
+| 피처 | 브랜치명 | 설명 |
+|------|----------|------|
+| 라이프사이클 정책 | `feature/ecr-lifecycle-policy` | 고급 라이프사이클 규칙 |
+| 크로스 계정 접근 | `feature/ecr-cross-account` | 타 AWS 계정 접근 허용 |
+| 리전 복제 | `feature/ecr-replication` | 다른 리전으로 이미지 복제 |
 
 ---
 
-## 유용한 링크
+## 주의사항
 
-- [Terraform 공식 문서](https://developer.hashicorp.com/terraform/docs)
-- [Terraform Registry (Provider/Module)](https://registry.terraform.io/)
-- [AWS Provider 문서](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- `IMMUTABLE` 태그 설정 시 동일 태그로 이미지를 덮어쓸 수 없습니다
+- `terraform.tfvars`는 git에 커밋하지 마세요 (`.gitignore` 포함됨)
